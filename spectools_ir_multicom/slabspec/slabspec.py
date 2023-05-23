@@ -1,5 +1,6 @@
 import sys
 
+import pdb as pdb
 import numpy as np
 import urllib
 import pandas as pd
@@ -18,7 +19,98 @@ from spectools_ir_multicom.utils import get_molecule_identifier, get_global_iden
 from .helpers import _strip_superfluous_hitran_data, _convert_quantum_strings
 
 #------------------------------------------------------------------------------------
-def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, res=1e-4, deltav=None, isotopologue_number=1, d_pc=1,
+def make_spec_multicom(molecule_name, n_col_arr, temp_arr, area_arr, wmax=40, wmin=1, deltav=None, isotopologue_number=1, d_pc=1,
+                       aupmin=None, convol_fwhm=None, eupmax=None, vup=None, swmin=None, parfile=None):
+    '''
+    Create an IR spectrum for a multi-componoent slab model with given arrays of temperature, area, and column density
+    Model assumes non-interacting components, i.e., fluxes of components are summed at the end
+
+    Parameters
+    ---------
+    molecule_name : string
+        String identifier for molecule, for example, 'CO', or 'H2O'
+    n_col : list
+        Column densities, in m^-2
+    temp : list
+        Temperatures, in K
+    area : list
+        Areas, in m^2
+    wmin : float, optional
+        Minimum wavelength of output spectrum, in microns. Defaults to 1 micron.
+    wmax : float, optional
+        Maximum wavelength of output spectrum, in microns.  Defaults to 40 microns.
+    deltav : float, optional
+        sigma of local velocity distribution, in m/s.  Note this is NOT the global velocity distribution.
+        Defaults to thermal speed of molecule given input temperature.
+    isotopologue_number : float, optional
+        Number representing isotopologue (1=most common, 2=next most common, etc.)
+    d_pc : float, optional
+        Distance to slab, in units of pc, for computing observed flux density.  Defaults to 1 pc.
+    aupmin : float, optional
+        Minimum Einstein-A coefficient for transitions
+    swmin : float, optional
+        Minimum line strength for transitions
+    convol_fwhm : float, optional
+        FWHM of convolution kernel, in km/s.
+    eupmax : float, optional
+        Maximum energy of transitions to consider, in K
+    vup : float, optional
+        Optional parameter to restrict output to certain upper level vibrational states.  Only works if 'Vp' field is a single integer.
+
+    Returns
+    --------
+    slabdict : dictionary
+        Dictionary includes two astropy tables:
+          lineparams : line parameters from HITRAN, integrated line fluxes, peak tau
+          spectrum : wavelength, flux, convolflux, tau
+        and two dictionaries
+          lines : wave_arr (in microns), flux_arr (in mks), velocity (in km/s) - for plotting individual lines
+          modelparams : model parameters: Area, column density, temperature, local velocity, convolution fwhm
+    '''
+
+#Convert lists to numpy arrays
+    n_col_arr=np.array(n_col_arr)
+    temp_arr=np.array(temp_arr)
+    area_arr=np.array(area_arr)
+
+#Make sure each array has the same number of elements.  If not, exit.
+    ncol=np.size(n_col_arr)
+    ntemp=np.size(temp_arr)
+    narea=np.size(area_arr)
+    if(not (ncol==ntemp==narea)):
+        print('Column density, temperature, and area lists must have the same number of elements.  Exiting.')
+        sys.exit()
+
+    out_list=[]
+#For each set of model parameters, call make_spec
+    ncom=ncol   #number of components        
+    for i,myn in enumerate(n_col_arr):
+        out=make_spec(molecule_name, myn, temp_arr[i], area_arr[i], wmax=wmax, wmin=wmin, deltav=deltav, isotopologue_number=isotopologue_number, d_pc=d_pc,
+                      aupmin=aupmin,convol_fwhm=convol_fwhm,eupmax=eupmax,vup=vup,swmin=swmin,parfile=parfile)
+
+        if(i==0): #For first model, define variables to hold sums
+            all_lineflux=np.copy(out['lineparams']['lineflux'])
+            all_flux=np.copy(out['spectrum']['flux'])
+            all_convolflux=np.copy(out['spectrum']['convolflux'])
+            all_wave=np.copy(out['spectrum']['wave'])
+        else: #Add fluxes from models together
+            all_lineflux+=np.copy(out['lineparams']['lineflux'])
+            interp_funct_flux = interp1d(out['spectrum']['wave'],out['spectrum']['flux'])  #Create interpolation function for model fluxes
+            interp_funct_convolflux = interp1d(out['spectrum']['wave'],out['spectrum']['convolflux'])  #Create interpolation function for convol fluxes
+
+            all_flux+=np.copy(interp_funct_flux(all_wave))         #Interpolate onto first model wavelength
+            all_convolflux+=np.copy(interp_funct_convolflux(all_wave)) #Interpolate onto first model wavelength
+
+        #Append output to a list
+        out_list.append(out)
+
+    sum_dict={'lineflux':all_lineflux,'flux':all_flux,'convolflux':all_convolflux,'wave':all_wave}
+    out_list.append(sum_dict)    
+#Return output
+    return out_list
+
+
+def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, deltav=None, isotopologue_number=1, d_pc=1,
               aupmin=None, convol_fwhm=None, eupmax=None, vup=None, swmin=None, parfile=None):
 
     '''
@@ -51,9 +143,9 @@ def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, res=1e-4, delta
         Minimum line strength for transitions
     convol_fwhm : float, optional
         FWHM of convolution kernel, in km/s.
-    res : float, optional
-        max resolution of spectrum, in microns.  Must be significantly higher than observed spectrum for correct calculation.
-        Defaults to 1e-4.
+#    res : float, optional
+#        max resolution of spectrum, in microns.  Must be significantly higher than observed spectrum for correct calculation.
+#        Defaults to 1e-4.
     eupmax : float, optional
         Maximum energy of transitions to consider, in K
     vup : float, optional
@@ -87,7 +179,7 @@ def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, res=1e-4, delta
         deltav = compute_thermal_velocity(molecule_name, temp)
 
     #Internal resolving power needed to resolve deltav
-    res = oversamp*c.value/deltav
+#    res = oversamp*c.value/deltav
 
     #Read HITRAN data
     if(parfile is not None):
@@ -134,7 +226,7 @@ def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, res=1e-4, delta
     #Now interpolate over wavelength space so that all lines can be added together
     w_arr = wave            #nlines x nvel
     f_arr = w_arr-w_arr     #nlines x nvel
-    nbins = int(oversamp*wmax/(wmax-wmin)*(c.value/deltav))
+    nbins = int(oversamp*(wmax-wmin)/wmax*(c.value/deltav))
 
     #Create arrays to hold full spectrum (optical depth vs. wavelength)
     totalwave = np.logspace(np.log10(wmin),np.log10(wmax),nbins)
@@ -195,15 +287,18 @@ def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, res=1e-4, delta
     #Model params
     if(convol_fwhm is not None):
         convol_fwhm=convol_fwhm*un.km/un.s
-    modelparams_table={'area':area*un.meter*un.meter,'temp':temp*un.K,'n_col':n_col/un.meter/un.meter, 'res':res*un.micron,
+#    modelparams_table={'area':area*un.meter*un.meter,'temp':temp*un.K,'n_col':n_col/un.meter/un.meter, 'res':res*un.micron,
+#                       'deltav':deltav*un.meter/un.s, 'convol_fwhm':convol_fwhm, 'd_pc':d_pc*un.parsec,
+#                       'isotopologue_number':isot,'molecule_name':molecule_name}
+    modelparams_table={'area':area*un.meter*un.meter,'temp':temp*un.K,'n_col':n_col/un.meter/un.meter,
                        'deltav':deltav*un.meter/un.s, 'convol_fwhm':convol_fwhm, 'd_pc':d_pc*un.parsec,
                        'isotopologue_number':isot,'molecule_name':molecule_name}
     slabdict['modelparams'] = modelparams_table
 
     #Line-by-line data
-    hitran_data['tau0'] = tau0
-    hitran_data['lineflux'] = lineflux
-    slabdict['moldata'] = hitran_data
+#    hitran_data['tau0'] = tau0
+#    hitran_data['lineflux'] = lineflux
+#    slabdict['moldata'] = hitran_data
 
     return slabdict
 

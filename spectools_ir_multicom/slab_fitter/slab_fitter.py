@@ -11,7 +11,6 @@ from astropy.io import fits
 from astropy.constants import c,h, k_B, G, M_sun, au, pc, u
 from astropy.table import Table
 from astropy import units as un
-from astropy.convolution import Gaussian1DKernel, convolve
 
 from spectools_ir_multicom.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molecule_identifier, get_molmass
 
@@ -101,15 +100,23 @@ class Retrieval():
         self.LineData = LineData
 
     def run_emcee(self):
-        #Initialize walkers
-        lognini = np.random.uniform(self.Config.getpar('lognmin'), self.Config.getpar('lognmax'), self.Config.getpar('Nwalkers')) # initial logn points 
-        tini = np.random.uniform(self.Config.getpar('tmin'), self.Config.getpar('tmax'), self.Config.getpar('Nwalkers')) # initial logn points 
-        logomegaini = np.random.uniform(self.Config.getpar('logomegamin'), self.Config.getpar('logomegamax'), self.Config.getpar('Nwalkers')) # initial logn points 
-        inisamples = np.array([lognini, tini, logomegaini]).T
-        ndims = inisamples.shape[1] 
         Nwalkers=self.Config.getpar('Nwalkers')
         Nsamples=self.Config.getpar('Nsamples')
         Nburnin=self.Config.getpar('Nburnin')
+        Ncom=self.Config.getpar('Ncom')
+
+        #Initialize walkers
+        samplearr=[]
+        for i in np.arange(Ncom):
+            lognini = np.random.uniform(self.Config.getpar('lognmin'), self.Config.getpar('lognmax'), Nwalkers) # initial logn points 
+            samplearr.append(lognini)
+            tini = np.random.uniform(self.Config.getpar('tmin'), self.Config.getpar('tmax'), Nwalkers) # initial logn points 
+            samplearr.append(tini)
+            logomegaini = np.random.uniform(self.Config.getpar('logomegamin'), self.Config.getpar('logomegamax'), Nwalkers) # initial logn points 
+            samplearr.append(logomegaini)
+
+        inisamples=np.array(samplearr).T
+        ndims = inisamples.shape[1] 
         sampler = emcee.EnsembleSampler(Nwalkers, ndims, self._lnposterior)
 
         start_time=time.time()
@@ -117,8 +124,6 @@ class Retrieval():
         end_time=time.time()
         print("Number of total samples:", Nwalkers*Nsamples)
         print("Run time [s]:", end_time-start_time)
-        #sampler.chain has dimensions (Nwalkers, Nburnin+Nsamples,ndims)
-#        samples = sampler.chain[:, Nburnin:, :].reshape((-1, ndims))  
 
         return sampler.chain
 
@@ -142,8 +147,23 @@ class Retrieval():
 
         return lp
 
+    def _lnprior_multicom(self, theta):
+        Ncom=self.Config.getpar('Ncom') #Get number of components from config
+
+        if(Ncom==1): #If only one component, just compute prior and return
+            mytheta=theta
+            lp=self._lnprior(mytheta)
+
+        if(Ncom>1): #If >1 component, loop through components and add fluxes
+            for i in np.arange(Ncom):
+                mytheta=theta[3*i:3*i+3]
+                mylp=self._lnprior(mytheta)
+                if (i==0): lp=mylp
+                else: lp+=mylp
+        return lp
+
     def _lnlikelihood(self, theta):
-        md = self._compute_fluxes(theta)
+        md = self._compute_fluxes_multicom(theta)  #model
         data=self.LineData.lineflux
         sigma=self.LineData.lineflux_err
         lnlike = -0.5*np.sum(((md - data)/sigma)**2)
@@ -151,12 +171,28 @@ class Retrieval():
         return lnlike
 
     def _lnposterior(self,theta):
-        lp = self._lnprior(theta)
+        lp = self._lnprior_multicom(theta)
 
         if not np.isfinite(lp):
             return -np.inf
 
         return lp + self._lnlikelihood(theta)
+
+    def _compute_fluxes_multicom(self,theta):
+        Ncom=self.Config.getpar('Ncom') #Get number of components from config
+
+        if(Ncom==1): #If only one component, just compute fluxes and return
+            mytheta=theta
+            lineflux=self._compute_fluxes(mytheta)
+
+        if(Ncom>1): #If >1 component, loop through components and add fluxes
+            for i in np.arange(Ncom):
+                mytheta=theta[3*i:3*i+3]
+                mylineflux=self._compute_fluxes(mytheta)
+                if (i==0): lineflux=mylineflux
+                else: lineflux+=mylineflux                                
+
+        return lineflux
 
     def _compute_fluxes(self,theta):
         logn, temp, logomega = theta    #unpack parameters

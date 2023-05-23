@@ -9,32 +9,11 @@ from astropy.io import fits
 from astropy.constants import c,h, k_B, G, M_sun, au, pc, u
 from astropy.table import Table
 from astropy import units as un
-from astropy.convolution import Gaussian1DKernel, convolve
 
 from spectools_ir_multicom.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molmass
 
-def compute_model_fluxes(mydata,samples):
-    '''
-    Function to compute model fluxes for same lines as in dataset.
-
-    Parameters
-    ----------
-    mydata : Data object
-     Instance of Data class, provides routine with lines to calculate
-    samples : numpy array
-     Array holding arrays of MCMC output samples.  Used to find best-fit parameters.s
-
-    Returns
-    ---------
-    lineflux : numpy array
-     Array of line fluxes 
-    '''
-
-    bestfit_dict=find_best_fit(samples)
-    logn=bestfit_dict['logN']
-    temp=bestfit_dict['T']
-    logomega=bestfit_dict['logOmega']
-
+def compute_fluxes_single(mydata,theta):
+    logn,temp,logomega=theta
     omega=10**logomega
     n_col=10**logn
     si2jy=1e26   #SI to Jy flux conversion factor 
@@ -76,6 +55,39 @@ def compute_model_fluxes(mydata,samples):
         f_arr[i,:]=2*h.value*c.value*wn0[i]**3./(np.exp(wnfactor[i])-1.0e0)*(1-np.exp(-tau[i,:]))*si2jy*omega
         lineflux_jykms=np.sum(f_arr[i,:])*dvel
         lineflux[i]=lineflux_jykms*1e-26*1.*1e5*(1./(w0[i]*1e-4))    #mks  
+    return lineflux    
+
+
+def compute_model_fluxes(mydata,samples):
+    '''
+    Function to compute model fluxes for same lines as in dataset.
+
+    Parameters
+    ----------
+    mydata : Data object
+     Instance of Data class, provides routine with lines to calculate
+    samples : numpy array
+     Array holding arrays of MCMC output samples.  Used to find best-fit parameters.s
+
+    Returns
+    ---------
+    lineflux : numpy array
+     Array of line fluxes 
+    '''
+
+    Ncom=get_ncom(samples)  #Number of components
+
+    bestfit_dict=find_best_fit(samples)
+    theta=[]
+    for i in range(3*Ncom):
+        theta.append(np.percentile(samples[:, i], [16, 50, 84])[1])
+
+    for i in range(Ncom):
+        mytheta=theta[3*i:3*i+3]
+        mylineflux=compute_fluxes_single(mydata,mytheta)
+        if (i==0): lineflux=mylineflux
+        else: lineflux+=mylineflux
+
     return lineflux
 
 
@@ -119,9 +131,16 @@ def corner_plot(samples,outfile=None,**kwargs):
     outfile : str, optional
      Path to output file to hold resultant figure
     '''
-
-
-    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
+    Ncom=get_ncom(samples)  #Number of components
+    parlabels=[]
+    paramkeys=[]
+    perrkeys=[]
+    nerrkeys=[]
+    for i in range(Ncom):
+        parlabels.append(r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$"+'_'+str(i))
+        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"$\log(\ {\Omega [\mathrm{rad}]}\ )$"+'_'+str(i))
+#    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
     fig = corner.corner(samples,
                     labels=parlabels,
                     show_titles=True, title_kwargs={"fontsize": 12},**kwargs)
@@ -140,9 +159,21 @@ def trace_plot(samples,xr=[None,None]):
      Range of samples to plot
     '''
 
-    fig, axes = plt.subplots(3, figsize=(10, 7), sharex=True)
-    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
-    ndims=3
+    Ncom=get_ncom(samples)  #Number of components
+
+    fig, axes = plt.subplots(Ncom*3, figsize=(10, Ncom*6), sharex=True)
+#    parlabels=Ncom*[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
+
+    parlabels=[]
+    paramkeys=[]
+    perrkeys=[]
+    nerrkeys=[]
+    for i in range(Ncom):
+        parlabels.append(r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$"+'_'+str(i))
+        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"$\log(\ {\Omega [\mathrm{rad}]}\ )$"+'_'+str(i))
+
+    ndims=3*Ncom
     for i in range(ndims):
         ax = axes[i]
         ax.plot(samples[:,i], "k", alpha=0.3)    #0th walker, i'th dimension
@@ -150,6 +181,10 @@ def trace_plot(samples,xr=[None,None]):
         ax.yaxis.set_label_coords(-0.1, 0.5)
         ax.set_xlim(xr)
     axes[-1].set_xlabel("step number");
+
+def get_ncom(samples):
+    Ncom=int(np.size(samples[0])/3)
+    return Ncom
 
 def find_best_fit(samples,show=False):
     '''
@@ -168,12 +203,28 @@ def find_best_fit(samples,show=False):
      Dictionary holding best-fit slab model parameters with plus and minus error bars.
      Based on 16, 50 and 84th percentiles of posterior distribution.
     '''
-    parlabels=[ r"\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )",r"Temperature [K]", r"\log(\ {\Omega [\mathrm{rad}]}\ )"]
-    paramkeys=['logN','T','logOmega']
-    perrkeys=['logN_perr','T_perr','logOmega_perr']
-    nerrkeys=['logN_nerr','T_nerr','logOmega_nerr']
+    Ncom=get_ncom(samples)  #Number of components
+
+    parlabels=[]
+    paramkeys=[]
+    perrkeys=[]
+    nerrkeys=[]
+    for i in range(Ncom):
+        parlabels.append(r"\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )"+'_'+str(i))
+        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"\log(\ {\Omega [\mathrm{rad}]}\ )"+'_'+str(i))
+        paramkeys.append('logN'+'_'+str(i))
+        paramkeys.append('T'+'_'+str(i))
+        paramkeys.append('logOmega'+'_'+str(i))
+        perrkeys.append('logN_perr'+'_'+str(i))
+        perrkeys.append('T_perr'+'_'+str(i))
+        perrkeys.append('logOmega_perr'+'_'+str(i))
+        nerrkeys.append('logN_nerr'+'_'+str(i))
+        nerrkeys.append('T_nerr'+'_'+str(i))
+        nerrkeys.append('logOmega_nerr'+'_'+str(i))
+
     bestfit_dict={}
-    for i in range(3):
+    for i in range(3*Ncom):
         mcmc = np.percentile(samples[:, i], [16, 50, 84])
         q = np.diff(mcmc)
         txt = "\mathrm{{{3}}} = {0:.3f}_{{-{1:.3f}}}^{{{2:.3f}}}"

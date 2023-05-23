@@ -11,9 +11,8 @@ from astropy.io import fits
 from astropy.constants import c,h, k_B, G, M_sun, au, pc, u
 from astropy.table import Table
 from astropy import units as un
-from astropy.convolution import Gaussian1DKernel, convolve
 
-from spectools_ir.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molecule_identifier, get_molmass
+from spectools_ir_multicom.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molecule_identifier, get_molmass
 
 def read_data_from_file(filename,vup=None,**kwargs):
     '''

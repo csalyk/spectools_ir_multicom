@@ -9,9 +9,55 @@ from astropy.io import fits
 from astropy.constants import c,h, k_B, G, M_sun, au, pc, u
 from astropy.table import Table
 from astropy import units as un
-from astropy.convolution import Gaussian1DKernel, convolve
 
-from spectools_ir.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molmass
+from spectools_ir_multicom.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molmass
+
+def compute_fluxes_single(mydata,theta):
+    long,temp,logomega=theta
+
+    omega=10**logomega
+    n_col=10**logn
+    si2jy=1e26   #SI to Jy flux conversion factor 
+#If local velocity field is not given, assume sigma given by thermal velocity
+    mu=u.value*mydata.molmass
+    deltav=np.sqrt(k_B.value*temp/mu)   #m/s
+#Use line_ids to extract relevant HITRAN data
+    wn0=mydata.wn0
+    aup=mydata.aup
+    eup=mydata.eup
+    gup=mydata.gup
+    eup_k=mydata.eup_k
+    elower=mydata.elower
+
+#Compute partition function                    
+    q=_get_partition_function(mydata,temp)
+#Begin calculations
+    afactor=((aup*gup*n_col)/(q*8.*np.pi*(wn0)**3.)) #mks
+    efactor=h.value*c.value*eup/(k_B.value*temp)
+    wnfactor=h.value*c.value*wn0/(k_B.value*temp)
+    phia=1./(deltav*np.sqrt(2.0*np.pi))
+    efactor2=eup_k/temp
+    efactor1=elower*1.e2*h.value*c.value/k_B.value/temp
+    tau0=afactor*(np.exp(-1.*efactor1)-np.exp(-1.*efactor2))*phia  #Avoids numerical issues at low T 
+    w0=1.e6/wn0
+
+    dvel=0.1e0    #km/s                                     
+    nvel=1001
+    vel=(dvel*(np.arange(0,nvel)-500.0))*1.e3     #now in m/s
+#Now loop over transitions and velocities to calculate flux 
+    tau=np.exp(-vel**2./(2.*np.vstack(deltav)**2.))*np.vstack(tau0)
+
+#Create array to hold line fluxes (one flux value per line) 
+    nlines=np.size(tau0)
+    f_arr=np.zeros([nlines,nvel])     #nlines x nvel
+    lineflux=np.zeros(nlines)
+
+    for i in range(nlines):  #I might still be able to get rid of this loop 
+        f_arr[i,:]=2*h.value*c.value*wn0[i]**3./(np.exp(wnfactor[i])-1.0e0)*(1-np.exp(-tau[i,:]))*si2jy*omega
+        lineflux_jykms=np.sum(f_arr[i,:])*dvel
+        lineflux[i]=lineflux_jykms*1e-26*1.*1e5*(1./(w0[i]*1e-4))    #mks  
+    return lineflux    
+
 
 def compute_model_fluxes(mydata,samples):
     '''
@@ -30,7 +76,10 @@ def compute_model_fluxes(mydata,samples):
      Array of line fluxes 
     '''
 
+    Ncom=get_ncom(samples)  #Number of components
+
     bestfit_dict=find_best_fit(samples)
+
     logn=bestfit_dict['logN']
     temp=bestfit_dict['T']
     logomega=bestfit_dict['logOmega']
@@ -119,9 +168,16 @@ def corner_plot(samples,outfile=None,**kwargs):
     outfile : str, optional
      Path to output file to hold resultant figure
     '''
-
-
-    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
+    Ncom=get_ncom(samples)  #Number of components
+    parlabels=[]
+    paramkeys=[]
+    perrkeys=[]
+    nerrkeys=[]
+    for i in range(Ncom):
+        parlabels.append(r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$"+'_'+str(i))
+        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"$\log(\ {\Omega [\mathrm{rad}]}\ )$"+'_'+str(i))
+#    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
     fig = corner.corner(samples,
                     labels=parlabels,
                     show_titles=True, title_kwargs={"fontsize": 12},**kwargs)
@@ -140,9 +196,21 @@ def trace_plot(samples,xr=[None,None]):
      Range of samples to plot
     '''
 
-    fig, axes = plt.subplots(3, figsize=(10, 7), sharex=True)
-    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
-    ndims=3
+    Ncom=get_ncom(samples)  #Number of components
+
+    fig, axes = plt.subplots(Ncom*3, figsize=(10, Ncom*6), sharex=True)
+#    parlabels=Ncom*[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
+
+    parlabels=[]
+    paramkeys=[]
+    perrkeys=[]
+    nerrkeys=[]
+    for i in range(Ncom):
+        parlabels.append(r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$"+'_'+str(i))
+        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"$\log(\ {\Omega [\mathrm{rad}]}\ )$"+'_'+str(i))
+
+    ndims=3*Ncom
     for i in range(ndims):
         ax = axes[i]
         ax.plot(samples[:,i], "k", alpha=0.3)    #0th walker, i'th dimension
@@ -150,6 +218,10 @@ def trace_plot(samples,xr=[None,None]):
         ax.yaxis.set_label_coords(-0.1, 0.5)
         ax.set_xlim(xr)
     axes[-1].set_xlabel("step number");
+
+def get_ncom(samples):
+    Ncom=int(np.size(samples[0])/3)
+    return Ncom
 
 def find_best_fit(samples,show=False):
     '''
@@ -168,12 +240,28 @@ def find_best_fit(samples,show=False):
      Dictionary holding best-fit slab model parameters with plus and minus error bars.
      Based on 16, 50 and 84th percentiles of posterior distribution.
     '''
-    parlabels=[ r"\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )",r"Temperature [K]", r"\log(\ {\Omega [\mathrm{rad}]}\ )"]
-    paramkeys=['logN','T','logOmega']
-    perrkeys=['logN_perr','T_perr','logOmega_perr']
-    nerrkeys=['logN_nerr','T_nerr','logOmega_nerr']
+    Ncom=get_ncom(samples)  #Number of components
+
+    parlabels=[]
+    paramkeys=[]
+    perrkeys=[]
+    nerrkeys=[]
+    for i in range(Ncom):
+        parlabels.append(r"\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )"+'_'+str(i))
+        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"\log(\ {\Omega [\mathrm{rad}]}\ )"+'_'+str(i))
+        paramkeys.append('logN'+'_'+str(i))
+        paramkeys.append('T'+'_'+str(i))
+        paramkeys.append('logOmega'+'_'+str(i))
+        perrkeys.append('logN_perr'+'_'+str(i))
+        perrkeys.append('T_perr'+'_'+str(i))
+        perrkeys.append('logOmega_perr'+'_'+str(i))
+        nerrkeys.append('logN_nerr'+'_'+str(i))
+        nerrkeys.append('T_nerr'+'_'+str(i))
+        nerrkeys.append('logOmega_nerr'+'_'+str(i))
+
     bestfit_dict={}
-    for i in range(3):
+    for i in range(3*Ncom):
         mcmc = np.percentile(samples[:, i], [16, 50, 84])
         q = np.diff(mcmc)
         txt = "\mathrm{{{3}}} = {0:.3f}_{{-{1:.3f}}}^{{{2:.3f}}}"

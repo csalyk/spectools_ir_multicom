@@ -5,8 +5,8 @@
 "lognmax": 24,
 "logomegamin": -19,
 "logomegamax": -12,
-"Nwalkers": 20,
-"Nburnin": 500,
-"Nsamples": 5000,
-"Ncom": 1
+"Nwalkers": 10,
+"Nburnin": 10,
+"Nsamples": 300,
+"Ncom": 2
 }

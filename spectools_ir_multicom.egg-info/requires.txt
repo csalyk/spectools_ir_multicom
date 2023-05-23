@@ -1,0 +1,9 @@
+astropy>=4.2
+emcee>=3.0
+numpy>=1
+pandas>=0.24
+corner>=2.1
+matplotlib>=3
+astroquery>0.4
+scipy>=1.2
+IPython>=7.4
