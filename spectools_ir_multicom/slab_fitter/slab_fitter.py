@@ -13,6 +13,7 @@ from astropy.table import Table
 from astropy import units as un
 
 from spectools_ir_multicom.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molecule_identifier, get_molmass
+import pdb as pdb
 
 def read_data_from_file(filename,vup=None,**kwargs):
     '''
@@ -107,13 +108,23 @@ class Retrieval():
 
         #Initialize walkers
         samplearr=[]
-        for i in np.arange(Ncom):
+
+        if(Ncom==1):
             lognini = np.random.uniform(self.Config.getpar('lognmin'), self.Config.getpar('lognmax'), Nwalkers) # initial logn points 
             samplearr.append(lognini)
-            tini = np.random.uniform(self.Config.getpar('tmin'), self.Config.getpar('tmax'), Nwalkers) # initial logn points 
-            samplearr.append(tini)
-            logomegaini = np.random.uniform(self.Config.getpar('logomegamin'), self.Config.getpar('logomegamax'), Nwalkers) # initial logn points 
+            logtini = np.random.uniform(self.Config.getpar('logtmin'), self.Config.getpar('logtmax'), Nwalkers) # initial logt points  #logt
+            samplearr.append(logtini) #logt
+            logomegaini = np.random.uniform(self.Config.getpar('logomegamin'), self.Config.getpar('logomegamax'), Nwalkers) # initial logomega points 
             samplearr.append(logomegaini)
+
+        if(Ncom>1):
+            for i in np.arange(Ncom):
+                lognini = np.random.uniform(self.Config.getpar('lognmin_'+str(i)), self.Config.getpar('lognmax_'+str(i)), Nwalkers) # initial logn points 
+                samplearr.append(lognini)
+                logtini = np.random.uniform(self.Config.getpar('logtmin_'+str(i)), self.Config.getpar('logtmax_'+str(i)), Nwalkers) # initial logt points #logt
+                samplearr.append(logtini)   #logt
+                logomegaini = np.random.uniform(self.Config.getpar('logomegamin_'+str(i)), self.Config.getpar('logomegamax_'+str(i)), Nwalkers) # initial logn points 
+                samplearr.append(logomegaini)
 
         inisamples=np.array(samplearr).T
         ndims = inisamples.shape[1] 
@@ -125,23 +136,37 @@ class Retrieval():
         print("Number of total samples:", Nwalkers*Nsamples)
         print("Run time [s]:", end_time-start_time)
 
-        return sampler.chain
+        return sampler
+#        return sampler.chain
 
-    def _lnprior(self, theta):
+    def _lnprior(self, theta, i=0):
+
+        Ncom=self.Config.getpar('Ncom')
+
         lp = 0.  #initialize log prior
-        logn, temp, logomega = theta # unpack the model parameters from the list                                             
+        logn, logtemp, logomega = theta # unpack the model parameters from the list #logt                                            
+
+        if(Ncom==1):
+            lognmin = self.Config.getpar('lognmin')  # lower range of prior                                                        
+            lognmax = self.Config.getpar('lognmax')  # upper range of prior                                                        
+            logtmin = self.Config.getpar('logtmin')  #logt
+            logtmax = self.Config.getpar('logtmax')  #logt
+            logomegamin = self.Config.getpar('logomegamin')
+            logomegamax = self.Config.getpar('logomegamax')
+        if(Ncom>1):
+            lognmin = self.Config.getpar('lognmin_'+str(i))  # lower range of prior                                                        
+            lognmax = self.Config.getpar('lognmax_'+str(i))  # upper range of prior                                                        
+            logtmin = self.Config.getpar('logtmin_'+str(i)) #logt
+            logtmax = self.Config.getpar('logtmax_'+str(i)) #logt
+            logomegamin = self.Config.getpar('logomegamin_'+str(i))
+            logomegamax = self.Config.getpar('logomegamax_'+str(i))
+
         #First parameter: logn - uniform prior
-        lognmin = self.Config.getpar('lognmin')  # lower range of prior                                                        
-        lognmax = self.Config.getpar('lognmax')  # upper range of prior                                                        
         lp = 0. if lognmin < logn < lognmax else -np.inf 
         #Second parameter: temperature - uniform prior
-        tmin = self.Config.getpar('tmin')
-        tmax = self.Config.getpar('tmax')
-        lpt = 0. if tmin < temp < tmax else -np.inf
+        lpt = 0. if logtmin < logtemp < logtmax else -np.inf  #logt
         lp += lpt #Add log prior due to temperature to lp due to logn
         #Third parameter: Omega - uniform prior
-        logomegamin = self.Config.getpar('logomegamin')
-        logomegamax = self.Config.getpar('logomegamax')
         lpo = 0. if logomegamin < logomega < logomegamax else -np.inf
         lp += lpo #Add log prior due to omega to lp due to temperature,logn
 
@@ -157,7 +182,7 @@ class Retrieval():
         if(Ncom>1): #If >1 component, loop through components and add fluxes
             for i in np.arange(Ncom):
                 mytheta=theta[3*i:3*i+3]
-                mylp=self._lnprior(mytheta)
+                mylp=self._lnprior(mytheta,i=i)
                 if (i==0): lp=mylp
                 else: lp+=mylp
         return lp
@@ -195,7 +220,8 @@ class Retrieval():
         return lineflux
 
     def _compute_fluxes(self,theta):
-        logn, temp, logomega = theta    #unpack parameters
+        logn, logtemp, logomega = theta    #unpack parameters  #logt
+        temp=10**logtemp  #logt
         omega=10**logomega
         n_col=10**logn
         si2jy=1e26   #SI to Jy flux conversion factor
@@ -238,10 +264,17 @@ class Retrieval():
         f_arr=np.zeros([nlines,nvel])     #nlines x nvel       
         lineflux=np.zeros(nlines)
 
-        for i in range(nlines):  #Loop is time-consuming.  Maybe it can be removed somehow?
-            f_arr[i,:]=2*h.value*c.value*wn0[i]**3./(np.exp(wnfactor[i])-1.0e0)*(1-np.exp(-tau[i,:]))*si2jy*omega
-            lineflux_jykms=np.sum(f_arr[i,:])*dvel
-            lineflux[i]=lineflux_jykms*1e-26*1.*1e5*(1./(w0[i]*1e-4))    #mks
+        pre_val = 2*h.value*c.value*wn0**3.
+        for i in range(nlines):
+            f_arr[i, :] = pre_val[i] / (np.exp(wnfactor[i]) - 1.0e0) * (1 - np.exp(-tau[i, :])) * si2jy * omega
+
+        lineflux_jykms = np.sum(f_arr, axis=1) * dvel
+        lineflux = lineflux_jykms * 1e-26 * 1. * 1e5 * (1. / (w0 * 1e-4))  # mks
+
+#        for i in range(nlines):  #Loop is time-consuming.  Maybe it can be removed somehow?
+#            f_arr[i,:]=2*h.value*c.value*wn0[i]**3./(np.exp(wnfactor[i])-1.0e0)*(1-np.exp(-tau[i,:]))*si2jy*omega
+#            lineflux_jykms=np.sum(f_arr[i,:])*dvel
+#            lineflux[i]=lineflux_jykms*1e-26*1.*1e5*(1./(w0[i]*1e-4))    #mks
 
         return lineflux
 #------------------------------------------------------------------------------

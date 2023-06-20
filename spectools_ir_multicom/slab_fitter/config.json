@@ -1,12 +1,18 @@
 {
-"tmin": 100,
-"tmax": 1200,
-"lognmin": 19,
-"lognmax": 24,
-"logomegamin": -19,
-"logomegamax": -12,
+"tmin_0": 100,
+"tmax_0": 700,
+"lognmin_0": 19,
+"lognmax_0": 24,
+"logomegamin_0": -19,
+"logomegamax_0": -12,
+"tmin_1": 700,
+"tmax_1": 1800,
+"lognmin_1": 19,
+"lognmax_1": 24,
+"logomegamin_1": -19,
+"logomegamax_1": -12,
 "Nwalkers": 20,
-"Nburnin": 500,
-"Nsamples": 5000,
-"Ncom": 1
+"Nburnin": 100,
+"Nsamples": 500,
+"Ncom": 2
 }

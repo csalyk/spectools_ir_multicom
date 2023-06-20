@@ -13,7 +13,8 @@ from astropy import units as un
 from spectools_ir_multicom.utils import extract_hitran_data, get_global_identifier, translate_molecule_identifier, get_molmass
 
 def compute_fluxes_single(mydata,theta):
-    logn,temp,logomega=theta
+    logn,logtemp,logomega=theta  #logt
+    temp=10**logtemp #logt
     omega=10**logomega
     n_col=10**logn
     si2jy=1e26   #SI to Jy flux conversion factor 
@@ -77,7 +78,7 @@ def compute_model_fluxes(mydata,samples):
 
     Ncom=get_ncom(samples)  #Number of components
 
-    bestfit_dict=find_best_fit(samples)
+#    bestfit_dict=find_best_fit(samples)
     theta=[]
     for i in range(3*Ncom):
         theta.append(np.percentile(samples[:, i], [16, 50, 84])[1])
@@ -112,6 +113,11 @@ def get_samples(chain,burnin):
     
     return samples
 
+def get_lnprob(mysampler,burnin):
+    lnprob=mysampler.lnprobability[:,burnin:].reshape(-1)
+    
+    return lnprob
+
 def _get_partition_function(mydata,temp):
     q=np.zeros(mydata.nlines)
     for myunique_id in mydata.unique_globals:
@@ -138,12 +144,13 @@ def corner_plot(samples,outfile=None,**kwargs):
     nerrkeys=[]
     for i in range(Ncom):
         parlabels.append(r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$"+'_'+str(i))
-        parlabels.append(r"Temperature [K]"+'_'+str(i))
+#        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"$\log(\ \mathrm{Temperature [K]})$"+'_'+str(i)) #logt
         parlabels.append(r"$\log(\ {\Omega [\mathrm{rad}]}\ )$"+'_'+str(i))
 #    parlabels=[ r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$",r"Temperature [K]", "$\log(\ {\Omega [\mathrm{rad}]}\ )$"]
     fig = corner.corner(samples,
                     labels=parlabels,
-                    show_titles=True, title_kwargs={"fontsize": 12},**kwargs)
+                    show_titles=True, title_kwargs={"fontsize": 12},quantiles=[0.16, 0.5, 0.84],**kwargs)
     if(outfile is not None):
         fig.savefig(outfile)
 
@@ -170,7 +177,8 @@ def trace_plot(samples,xr=[None,None]):
     nerrkeys=[]
     for i in range(Ncom):
         parlabels.append(r"$\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )$"+'_'+str(i))
-        parlabels.append(r"Temperature [K]"+'_'+str(i))
+#        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"$\log(\ $Temperature [K]$)$"+'_'+str(i)) #logt
         parlabels.append(r"$\log(\ {\Omega [\mathrm{rad}]}\ )$"+'_'+str(i))
 
     ndims=3*Ncom
@@ -211,18 +219,23 @@ def find_best_fit(samples,show=False):
     nerrkeys=[]
     for i in range(Ncom):
         parlabels.append(r"\log(\ n_\mathrm{tot} [\mathrm{m}^{-2}]\ )"+'_'+str(i))
-        parlabels.append(r"Temperature [K]"+'_'+str(i))
+        parlabels.append(r"\log(Temperature [K])"+'_'+str(i)) #logt
+#        parlabels.append(r"Temperature [K]"+'_'+str(i))
         parlabels.append(r"\log(\ {\Omega [\mathrm{rad}]}\ )"+'_'+str(i))
         paramkeys.append('logN'+'_'+str(i))
-        paramkeys.append('T'+'_'+str(i))
+        paramkeys.append('logT'+'_'+str(i)) #logt
+#        paramkeys.append('T'+'_'+str(i))
         paramkeys.append('logOmega'+'_'+str(i))
         perrkeys.append('logN_perr'+'_'+str(i))
-        perrkeys.append('T_perr'+'_'+str(i))
+        perrkeys.append('logT_perr'+'_'+str(i)) #logt
+#        perrkeys.append('T_perr'+'_'+str(i))
         perrkeys.append('logOmega_perr'+'_'+str(i))
         nerrkeys.append('logN_nerr'+'_'+str(i))
-        nerrkeys.append('T_nerr'+'_'+str(i))
+#        nerrkeys.append('T_nerr'+'_'+str(i))
+        nerrkeys.append('logT_nerr'+'_'+str(i)) #logt
         nerrkeys.append('logOmega_nerr'+'_'+str(i))
 
+    theta=[]
     bestfit_dict={}
     for i in range(3*Ncom):
         mcmc = np.percentile(samples[:, i], [16, 50, 84])
@@ -233,5 +246,8 @@ def find_best_fit(samples,show=False):
         bestfit_dict[paramkeys[i]]=mcmc[1]
         bestfit_dict[perrkeys[i]]=q[1]     
         bestfit_dict[nerrkeys[i]]=q[0]    
+        theta.append(mcmc[1])
+
+    bestfit_dict['theta']=theta
 
     return bestfit_dict

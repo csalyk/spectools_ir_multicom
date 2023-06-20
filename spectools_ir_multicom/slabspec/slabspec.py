@@ -229,7 +229,7 @@ def make_spec(molecule_name, n_col, temp, area, wmax=40, wmin=1, deltav=None, is
     nbins = int(oversamp*(wmax-wmin)/wmax*(c.value/deltav))
 
     #Create arrays to hold full spectrum (optical depth vs. wavelength)
-    totalwave = np.logspace(np.log10(wmin),np.log10(wmax),nbins)
+    totalwave = np.logspace(np.log10(wmin-10*deltav/c.value*wmax),np.log10(wmax+10*deltav/c.value*wmax),nbins) #Extend beyond input wave by 10xdelta_wave   
     totaltau = np.zeros(nbins)
 
     #Create array to hold line fluxes (one flux value per line)
@@ -363,7 +363,7 @@ def write_slab(slabdict,filename='slabmodel.fits'):
     c2 = fits.Column(name='flux', array=flux, format='F')
     t1 = fits.BinTableHDU.from_columns([c1, c2])
 
-    moldata = slabdict['moldata']
+    moldata = slabdict['lineparams']
     mol_cols = []
     for key in moldata.keys():
         try:

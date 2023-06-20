@@ -219,7 +219,7 @@ def extract_hitran_data(molecule_name, wavemin, wavemax, isotopologue_number=1, 
         swbool = tbl['sw'] > swmin
    #Vup
     if(vup is not None):
-        vupval = [np.int(val) for val in tbl['Vp']]
+        vupval = [int(val) for val in tbl['Vp']]
         vupbool=(np.array(vupval)==vup)
    #Combine
     extractbool = (abool & ebool & swbool & vupbool)
@@ -483,7 +483,7 @@ def spec_convol_R(wave, flux, R):
         g = Gaussian1DKernel(sigma_s)
     # use boundary='extend' to set values outside the array to nearest array value.
     # this is the best approximation in this case.
-    flux_conv = convolve(flux_constfwhm, g, normalize_kernel=True, boundary='extend')
+    flux_conv = convolve_fft(flux_constfwhm, g, normalize_kernel=True, boundary='fill')
     flux_oldsampling = np.interp(wave, wave_constfwhm, flux_conv)
 
     return flux_oldsampling
@@ -897,7 +897,7 @@ def extract_hitran_from_par(filename,wavemin=None,wavemax=None,isotopologue_numb
         swbool = data['sw'] > swmin
     #Vup
     if(vup is not None):
-        vupval = [np.int(val) for val in data['Vp']]
+        vupval = [int(val) for val in data['Vp']]
         vupbool = (np.array(vupval)==vup)
     #wavemin
     if(wavemin is not None):

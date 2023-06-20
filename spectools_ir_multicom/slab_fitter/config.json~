@@ -8,5 +8,5 @@
 "Nwalkers": 20,
 "Nburnin": 500,
 "Nsamples": 5000,
-"Ncom": 2
+"Ncom": 1
 }

@@ -40,11 +40,17 @@ def make_rotation_diagram(lineparams, units='mks', fluxkey='lineflux'):
 
     x=lineparams['eup_k']
     y=np.log(lineparams[fluxkey]/(lineparams['wn']*1e2*gup*lineparams['a']))   #All mks
+
     if(units=='cgs'):
         y=np.log(1000.*lineparams[fluxkey]/(lineparams['wn']*gup*lineparams['a'])) #All cgs
     if(units=='mixed'):
         y=np.log(lineparams[fluxkey]/(lineparams['wn']*gup*lineparams['a'])) #Mixed units
-    rot_dict={'x':x,'y':y,'units':units}
+
+    if('lineflux_err' in lineparams.columns):
+        dy=lineparams['lineflux_err']/lineparams[fluxkey]
+        rot_dict={'x':x,'y':y,'yerr':dy,'units':units}
+    else:
+        rot_dict={'x':x,'y':y,'units':units}
 
     return rot_dict
 
@@ -219,7 +225,7 @@ def extract_hitran_data(molecule_name, wavemin, wavemax, isotopologue_number=1, 
         swbool = tbl['sw'] > swmin
    #Vup
     if(vup is not None):
-        vupval = [np.int(val) for val in tbl['Vp']]
+        vupval = [int(val) for val in tbl['Vp']]
         vupbool=(np.array(vupval)==vup)
    #Combine
     extractbool = (abool & ebool & swbool & vupbool)
@@ -897,7 +903,7 @@ def extract_hitran_from_par(filename,wavemin=None,wavemax=None,isotopologue_numb
         swbool = data['sw'] > swmin
     #Vup
     if(vup is not None):
-        vupval = [np.int(val) for val in data['Vp']]
+        vupval = [int(val) for val in data['Vp']]
         vupbool = (np.array(vupval)==vup)
     #wavemin
     if(wavemin is not None):
