@@ -119,7 +119,7 @@ class Retrieval():
 
         if(Ncom>1):
             for i in np.arange(Ncom):
-                lognini = np.random.uniform(self.Config.getpar('lognmin_'+str(i)), self.Config.getpar('lognmax_'+str(i)), Nwalkers) # initial logn points 
+                lognini = np.random.uniform(self.Config.getpar('lognmin_'+str(i)), self.Config.getpar('lognmax_'+str(i)), Nwalkers) # initial logn points
                 samplearr.append(lognini)
                 logtini = np.random.uniform(self.Config.getpar('logtmin_'+str(i)), self.Config.getpar('logtmax_'+str(i)), Nwalkers) # initial logt points #logt
                 samplearr.append(logtini)   #logt
@@ -127,7 +127,7 @@ class Retrieval():
                 samplearr.append(logomegaini)
 
         inisamples=np.array(samplearr).T
-        ndims = inisamples.shape[1] 
+        ndims = inisamples.shape[1]
         sampler = emcee.EnsembleSampler(Nwalkers, ndims, self._lnposterior)
 
         start_time=time.time()
@@ -137,7 +137,6 @@ class Retrieval():
         print("Run time [s]:", end_time-start_time)
 
         return sampler
-#        return sampler.chain
 
     def _lnprior(self, theta, i=0):
 
@@ -145,7 +144,6 @@ class Retrieval():
 
         lp = 0.  #initialize log prior
         logn, logtemp, logomega = theta # unpack the model parameters from the list #logt                                            
-
         if(Ncom==1):
             lognmin = self.Config.getpar('lognmin')  # lower range of prior                                                        
             lognmax = self.Config.getpar('lognmax')  # upper range of prior                                                        
@@ -163,10 +161,12 @@ class Retrieval():
 
         #First parameter: logn - uniform prior
         lp = 0. if lognmin < logn < lognmax else -np.inf 
-        #Second parameter: temperature - uniform prior
+
+        #Second parameter: log temperature - uniform prior
         lpt = 0. if logtmin < logtemp < logtmax else -np.inf  #logt
         lp += lpt #Add log prior due to temperature to lp due to logn
-        #Third parameter: Omega - uniform prior
+
+        #Third parameter: log Omega - uniform prior
         lpo = 0. if logomegamin < logomega < logomegamax else -np.inf
         lp += lpo #Add log prior due to omega to lp due to temperature,logn
 
