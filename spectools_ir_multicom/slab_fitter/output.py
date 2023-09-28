@@ -59,7 +59,7 @@ def compute_fluxes_single(mydata,theta):
     return lineflux    
 
 
-def compute_model_fluxes(mydata,samples):
+def compute_model_fluxes(mydata,samples,bestfit=None):
     '''
     Function to compute model fluxes for same lines as in dataset.
 
@@ -79,10 +79,14 @@ def compute_model_fluxes(mydata,samples):
     Ncom=get_ncom(samples)  #Number of components
 
 #    bestfit_dict=find_best_fit(samples)
-    theta=[]
-    for i in range(3*Ncom):
-        theta.append(np.percentile(samples[:, i], [16, 50, 84])[1])
 
+    if(bestfit is None):  #best fit not specified, use 50th percentile from fit
+        theta=[]
+        for i in range(3*Ncom):
+            theta.append(np.percentile(samples[:, i], [16, 50, 84])[1])
+    else:
+        theta=bestfit
+            
     for i in range(Ncom):
         mytheta=theta[3*i:3*i+3]
         mylineflux=compute_fluxes_single(mydata,mytheta)
